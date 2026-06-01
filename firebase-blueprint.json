@@ -1,0 +1,29 @@
+{
+  "entities": {
+    "game": {
+      "title": "Scrabble Game State",
+      "description": "Represents a real-time Scrabble game, including player scores, tile racks, board placement, and turns.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The unique ID of the game room" },
+        "status": { "type": "string", "description": "One of waiting, active, finished, or abandoned" },
+        "gameType": { "type": "string", "description": "Whether the game is 'ai' or 'pvp'" },
+        "turnIndex": { "type": "integer", "description": "The index of the player whose turn it is currently" },
+        "players": { "type": "array", "description": "The active players in the game with score and individual racks" },
+        "board": { "type": "array", "description": "Placed letters flat list" },
+        "bag": { "type": "array", "description": "Shuffled letter pool remaining" },
+        "lastMove": { "type": "object", "description": "Metadata of the last played turn" },
+        "winnerId": { "type": "string", "description": "The UID of the winner" },
+        "createdAt": { "type": "number", "description": "Unix timestamp of creation" },
+        "updatedAt": { "type": "number", "description": "Unix timestamp of last action" }
+      },
+      "required": ["id", "status", "gameType", "turnIndex", "players", "board", "bag"]
+    }
+  },
+  "firestore": {
+    "/games/{gameId}": {
+      "schema": "game",
+      "description": "Active and finished Scrabble game lobbies"
+    }
+  }
+}

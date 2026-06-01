@@ -1,0 +1,95 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Standard high-security helper primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string 
+        && id.size() <= 64 
+        && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Schema Validation Helpers
+    function isValidGame(game) {
+      return game.id is string 
+        && game.id.size() <= 64
+        && game.status is string
+        && (game.status == 'waiting' || game.status == 'active' || game.status == 'finished' || game.status == 'abandoned')
+        && game.gameType is string
+        && (game.gameType == 'ai' || game.gameType == 'pvp')
+        && game.turnIndex is int
+        && game.players is list
+        && game.players.size() <= 2
+        && game.board is list
+        && game.board.size() <= 225
+        && game.bag is list
+        && game.bag.size() <= 100;
+    }
+
+    // Allows authenticated players to interact with their games
+    match /games/{gameId} {
+      allow get: if isSignedIn() && isValidId(gameId);
+      
+      // Allow searching for public waiting rooms or rooms you are part of
+      allow list: if isSignedIn() 
+        && (resource.data.status == 'waiting' 
+            || resource.data.players[0].uid == request.auth.uid 
+            || (resource.data.players.size() > 1 && resource.data.players[1].uid == request.auth.uid));
+
+      allow create: if isSignedIn() 
+        && isValidId(gameId) 
+        && isValidGame(incoming()) 
+        && incoming().players.size() >= 1 
+        && incoming().players[0].uid == request.auth.uid;
+
+      allow update: if isSignedIn() 
+        && isValidId(gameId) 
+        && isValidGame(incoming()) 
+        && (
+          // Matchmaker Join Action: A player joins an empty slot
+          (existing().status == 'waiting' 
+           && incoming().status == 'active' 
+           && incoming().players.size() == 2 
+           && incoming().players[1].uid == request.auth.uid
+           && incoming().diff(existing()).affectedKeys().hasOnly(['players', 'status', 'updatedAt'])) 
+          
+          || 
+          
+          // Turn Play / Interchange Move: Must be an active game, and player whose turn it was must sign the write
+          (existing().status == 'active' 
+           && (
+             // Confirm the editor is one of the players in the slot
+             existing().players[existing().turnIndex].uid == request.auth.uid
+           )
+           && incoming().diff(existing()).affectedKeys().hasAny(['board', 'players', 'bag', 'turnIndex', 'lastMove', 'status', 'winnerId', 'updatedAt']))
+           
+          ||
+
+          // Finish / Abandon: Any of the players can resign or mark as abandoned if someone times out
+          ((existing().status == 'active' || existing().status == 'waiting')
+           && (existing().players[0].uid == request.auth.uid || (existing().players.size() > 1 && existing().players[1].uid == request.auth.uid))
+           && incoming().status in ['finished', 'abandoned']
+           && incoming().diff(existing()).affectedKeys().hasAny(['status', 'winnerId', 'updatedAt']))
+        );
+
+      allow delete: if false; // Scrabble rooms are never deleted directly by clients
+    }
+  }
+}

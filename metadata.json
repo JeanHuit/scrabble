@@ -1,0 +1,6 @@
+{
+  "name": "Scrabble Online",
+  "description": "A responsive PWA/Mobile Scrabble game supporting local solo play, AI matchmaking, and full real-time multiplayer with Firebase.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
