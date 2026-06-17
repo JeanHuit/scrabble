@@ -54,4 +54,5 @@ export interface GameState {
   gameType: 'ai' | 'pvp';
   createdAt: number;
   updatedAt: number;
+  chat?: ChatMessage[];
 }

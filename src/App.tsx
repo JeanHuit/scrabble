@@ -71,11 +71,58 @@ export default function App() {
     localStorage.setItem(LOCAL_NICKNAME_KEY, nickname);
   }, [nickname]);
 
-  // 2. Load persistent client player uuid on load
+  // 2. Load persistent client player uuid on load and restore active session
   useEffect(() => {
     const uid = getOrCreateUserUid();
     setUserUid(uid);
+
+    const savedGameId = localStorage.getItem('scrabble_active_game_id');
+    const savedType = localStorage.getItem('scrabble_active_game_type');
+    if (savedGameId) {
+      if (savedType === 'pvp') {
+        if (hasSupabase) {
+          fetchGameRoom(savedGameId).then((dbGame) => {
+            if (dbGame) {
+              setActiveGame(dbGame as GameState);
+            } else {
+              localStorage.removeItem('scrabble_active_game_id');
+              localStorage.removeItem('scrabble_active_game_type');
+            }
+          }).catch((err) => {
+            console.error("Error auto-restoring PvP game session:", err);
+          });
+        }
+      } else {
+        const localSaved = localStorage.getItem(`scrabble_saved_game_${savedGameId}`);
+        if (localSaved) {
+          try {
+            setActiveGame(JSON.parse(localSaved));
+          } catch (e) {
+            console.error('Failed to parse local saved game:', e);
+          }
+        }
+      }
+    }
   }, []);
+
+  // Save or clear active game details to local storage
+  useEffect(() => {
+    if (activeGame) {
+      localStorage.setItem('scrabble_active_game_id', activeGame.id);
+      localStorage.setItem('scrabble_active_game_type', activeGame.gameType);
+      localStorage.setItem(`scrabble_saved_game_${activeGame.id}`, JSON.stringify(activeGame));
+    } else {
+      localStorage.removeItem('scrabble_active_game_id');
+      localStorage.removeItem('scrabble_active_game_type');
+    }
+  }, [activeGame]);
+
+  // Sync chat messages from the live PvP game state
+  useEffect(() => {
+    if (activeGame && activeGame.gameType === 'pvp' && activeGame.chat) {
+      setChatMessages(activeGame.chat);
+    }
+  }, [activeGame?.chat]);
 
   // 3. Setup real-time listeners for waiting lobbies if Supabase is provisioned
   useEffect(() => {
@@ -223,6 +270,14 @@ export default function App() {
     const freshBag = generateSharedBag();
     const hostDraw = drawLetters(freshBag, 7);
 
+    const initialLobbyMsg: ChatMessage = {
+      id: 'welcome',
+      playerUid: 'system',
+      playerName: 'System',
+      text: `Online lobby created! Room code is "${customRoomCode}". Share the code or invite an opponent to join.`,
+      timestamp: Date.now()
+    };
+
     const newGame: GameState = {
       id: customRoomCode,
       status: 'waiting',
@@ -236,22 +291,15 @@ export default function App() {
       lastMove: null,
       winnerId: null,
       createdAt: Date.now(),
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      chat: [initialLobbyMsg]
     };
 
     try {
       await createGameRoom(newGame);
       setTempPlacements([]);
       setSelectedTileId(null);
-      setChatMessages([
-        {
-          id: 'welcome',
-          playerUid: 'system',
-          playerName: 'System',
-          text: `Online lobby created! Room code is "${customRoomCode}". Share the code or invite an opponent to join.`,
-          timestamp: Date.now()
-        }
-      ]);
+      setChatMessages([initialLobbyMsg]);
       setActiveGame(newGame);
     } catch (err) {
       console.error('Failed to create online room:', err);
@@ -298,6 +346,14 @@ export default function App() {
         isConnected: true
       };
 
+      const joinMsg: ChatMessage = {
+        id: `chat-${Math.random().toString()}`,
+        playerUid: 'system',
+        playerName: 'System',
+        text: `${nickname} joined the game! Matchmaker activated. Let's play Scrabble!`,
+        timestamp: Date.now()
+      };
+
       const updatedPlayers = [roomData.players[0], opponentPlayer];
       const updatedGame: GameState = {
         ...roomData,
@@ -305,22 +361,15 @@ export default function App() {
         status: 'active',
         bag: player2Draw.revisedBag,
         turnIndex: Math.floor(Math.random() * 2), // Pick random starting turn index
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        chat: [...(roomData.chat || []), joinMsg]
       };
 
       await updateGameRoom(targetRoomId, updatedGame);
       
       setTempPlacements([]);
       setSelectedTileId(null);
-      setChatMessages([
-        {
-          id: 'system',
-          playerUid: 'system',
-          playerName: 'System',
-          text: `${nickname} joined the game! Matchmaker activated. Turn index initialized. Let's play Scrabble!`,
-          timestamp: Date.now()
-        }
-      ]);
+      setChatMessages([...(roomData.chat || []), joinMsg]);
       
       // Load active game context
       setActiveGame(updatedGame);
@@ -482,6 +531,14 @@ export default function App() {
 
     const nextTurn = (activeGame.turnIndex + 1) % 2;
 
+    const msg: ChatMessage = {
+      id: `chat-${Math.random().toString()}`,
+      playerUid: 'system',
+      playerName: 'System',
+      text: `🔄 ${activePlayer.name} exchanged ${rackExchangeSelection.length} tiles. Turn passes!`,
+      timestamp: Date.now()
+    };
+
     const revisedState: GameState = {
       ...activeGame,
       bag: drawOutcome.revisedBag,
@@ -494,21 +551,12 @@ export default function App() {
         score: 0,
         timestamp: Date.now()
       },
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      chat: [...(activeGame.chat || []), msg]
     };
 
     setRackExchangeSelection([]);
-    
-    // Append systemic chat message
-    const msg: ChatMessage = {
-      id: `chat-${Math.random().toString()}`,
-      playerUid: 'system',
-      playerName: 'System',
-      text: `🔄 ${activePlayer.name} exchanged ${rackExchangeSelection.length} tiles. Turn passes!`,
-      timestamp: Date.now()
-    };
     setChatMessages(prev => [...prev, msg]);
-
     await saveGameState(revisedState);
   };
 
@@ -521,6 +569,14 @@ export default function App() {
     const activePlayer = activeGame.players[activeGame.turnIndex];
     const nextTurn = (activeGame.turnIndex + 1) % 2;
 
+    const msg: ChatMessage = {
+      id: `chat-${Math.random().toString()}`,
+      playerUid: 'system',
+      playerName: 'System',
+      text: `⏭️ ${activePlayer.name} passed their turn.`,
+      timestamp: Date.now()
+    };
+
     const revisedState: GameState = {
       ...activeGame,
       turnIndex: nextTurn,
@@ -531,18 +587,11 @@ export default function App() {
         score: 0,
         timestamp: Date.now()
       },
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      chat: [...(activeGame.chat || []), msg]
     };
 
-    const msg: ChatMessage = {
-      id: `chat-${Math.random().toString()}`,
-      playerUid: 'system',
-      playerName: 'System',
-      text: `⏭️ ${activePlayer.name} passed their turn.`,
-      timestamp: Date.now()
-    };
     setChatMessages(prev => [...prev, msg]);
-
     await saveGameState(revisedState);
   };
 
@@ -557,6 +606,14 @@ export default function App() {
     const nextTurn = (activeGame.turnIndex + 1) % 2;
     const winnerPlayer = activeGame.players[nextTurn];
 
+    const msg: ChatMessage = {
+      id: `chat-${Math.random().toString()}`,
+      playerUid: 'system',
+      playerName: 'System',
+      text: `💀 ${activeGame.players[activeGame.turnIndex].name} resigned. ${winnerPlayer?.name || 'Opponent'} wins the match!`,
+      timestamp: Date.now()
+    };
+
     const revisedState: GameState = {
       ...activeGame,
       status: 'finished',
@@ -567,18 +624,11 @@ export default function App() {
         type: 'resign',
         timestamp: Date.now()
       },
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      chat: [...(activeGame.chat || []), msg]
     };
 
-    const msg: ChatMessage = {
-      id: `chat-${Math.random().toString()}`,
-      playerUid: 'system',
-      playerName: 'System',
-      text: `💀 ${activeGame.players[activeGame.turnIndex].name} resigned. ${winnerPlayer?.name || 'Opponent'} wins the match!`,
-      timestamp: Date.now()
-    };
     setChatMessages(prev => [...prev, msg]);
-
     await saveGameState(revisedState);
   };
 
@@ -637,6 +687,15 @@ export default function App() {
 
     const nextTurnIndex = (activeGame.turnIndex + 1) % 2;
 
+    // Output visual chat alert log
+    const matchLogMsg: ChatMessage = {
+      id: `log-${Math.random().toString()}`,
+      playerUid: 'system',
+      playerName: 'System',
+      text: `✏️ ${activePlayer.name} played "${validation.words.join(', ')}" for ${validation.score} points!`,
+      timestamp: Date.now()
+    };
+
     const revisedState: GameState = {
       ...activeGame,
       board: fullyPlacedCells,
@@ -651,17 +710,10 @@ export default function App() {
         score: validation.score,
         timestamp: Date.now()
       },
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      chat: [...(activeGame.chat || []), matchLogMsg]
     };
 
-    // Output visual chat alert log
-    const matchLogMsg: ChatMessage = {
-      id: `log-${Math.random().toString()}`,
-      playerUid: 'system',
-      playerName: 'System',
-      text: `✏️ ${activePlayer.name} played "${validation.words.join(', ')}" for ${validation.score} points!`,
-      timestamp: Date.now()
-    };
     setChatMessages(prev => [...prev, matchLogMsg]);
 
     // Clear board drafts

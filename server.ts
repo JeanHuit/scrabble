@@ -29,13 +29,18 @@ if (apiKey) {
 // Clean and parse markdown code blocks if the local model leaves stray backticks
 function cleanJsonResponse(text: string): string {
   let cleaned = text.trim();
-  if (cleaned.startsWith('```json')) {
-    cleaned = cleaned.substring(7);
-  } else if (cleaned.startsWith('```')) {
-    cleaned = cleaned.substring(3);
-  }
-  if (cleaned.endsWith('```')) {
-    cleaned = cleaned.substring(0, cleaned.length - 3);
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    cleaned = jsonMatch[0];
+  } else {
+    if (cleaned.startsWith('```json')) {
+      cleaned = cleaned.substring(7);
+    } else if (cleaned.startsWith('```')) {
+      cleaned = cleaned.substring(3);
+    }
+    if (cleaned.endsWith('```')) {
+      cleaned = cleaned.substring(0, cleaned.length - 3);
+    }
   }
   return cleaned.trim();
 }
@@ -89,7 +94,7 @@ Task: Propose your optimal word to play. Return the list of absolute row/col coo
       console.log(`Querying local Ollama instance at ${ollamaUrl} using model: ${ollamaModel}...`);
       
       try {
-        const response = await fetch(`${ollamaUrl}/api/chat`, {
+        let response = await fetch(`${ollamaUrl}/api/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -110,7 +115,29 @@ Task: Propose your optimal word to play. Return the list of absolute row/col coo
         });
 
         if (!response.ok) {
-          throw new Error(`Local Ollama service returned error status: ${response.status}`);
+          const firstErrDetails = await response.text();
+          console.warn(`Ollama first try failed with status ${response.status}: ${firstErrDetails}. Retrying with simplified payload (no system role or format constraints) for max compatibility...`);
+          
+          // Fallback Query: Simple format without standard format parameter or system role, which commonly causes 400 Bad Request
+          response = await fetch(`${ollamaUrl}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: ollamaModel,
+              messages: [
+                {
+                  role: 'user',
+                  content: prompt + '\nIMPORTANT: Your response MUST be valid JSON matching this schema exactly: {"placements": [{"row": number, "col": number, "letter": "uppercase_letter"}], "word": "word", "explanation": "string"}. Return ONLY raw json.'
+                }
+              ],
+              stream: false
+            })
+          });
+
+          if (!response.ok) {
+            const secondErrDetails = await response.text();
+            throw new Error(`Local Ollama service error. First try status was ${response.status}. Second try fallback failed too with status: ${response.status} - Details: ${secondErrDetails}`);
+          }
         }
 
         const data: any = await response.json();
@@ -121,7 +148,7 @@ Task: Propose your optimal word to play. Return the list of absolute row/col coo
       } catch (ollamaErr: any) {
         console.error('Ollama solver routine encountered an error:', ollamaErr);
         return res.status(500).json({ 
-          error: `Ollama solver error: ${ollamaErr.message || 'Connecting to local host timed out.'}. Make sure Ollama is listening and running.` 
+          error: `Ollama solver error: ${ollamaErr.message || 'Connecting to local host timed out.'}. Make sure Ollama is listening and running, and the target model supports user message content.` 
         });
       }
     }

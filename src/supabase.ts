@@ -151,14 +151,15 @@ export const subscribeToGame = (gameId: string, callback: (game: any) => void) =
     .on(
       'postgres_changes',
       {
-        event: 'UPDATE',
+        event: '*',
         schema: 'public',
-        table: 'games',
-        filter: `id=eq.${gameId}`
+        table: 'games'
       },
       (payload) => {
-        if (payload.new && payload.new.state) {
-          callback(payload.new.state);
+        const newId = (payload.new as any)?.id;
+        const oldId = (payload.old as any)?.id;
+        if (newId === gameId || oldId === gameId) {
+          queryGame();
         }
       }
     )
