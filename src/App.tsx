@@ -14,6 +14,7 @@ import { GameBoard } from './components/GameBoard';
 import { ActiveGameControls } from './components/ActiveGameControls';
 import { MatchLobby } from './components/MatchLobby';
 import { DictionaryManager } from './components/DictionaryManager';
+import { MoveValidatorPanel } from './components/MoveValidatorPanel';
 import { 
   generateSharedBag, 
   LETTER_VALUES, 
@@ -1213,115 +1214,159 @@ export default function App() {
           </div>
         ) : (
           /* Active Playing screen */
-          <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full max-w-7xl mx-auto items-start">
             
-            {/* Dynamic Interactive HUD */}
-            <div className="bg-slate-900 border border-slate-800 p-4 rounded-3xl shadow-lg flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4">
+            {/* LEFT COLUMN: Board and primary controls */}
+            <div className="lg:col-span-8 flex flex-col gap-4 w-full">
               
-              {/* Player 1 Details */}
-              <div className="flex items-center gap-3 flex-1">
-                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-lg font-black transition-all ${
-                  activeGame.turnIndex === 0 
-                    ? 'bg-amber-500 text-slate-950 ring-4 ring-amber-400/40 scale-105' 
-                    : 'bg-slate-800 text-slate-400'
-                }`}>
-                  {activeGame.players[0]?.uid === 'gemini' ? <Bot className="w-6 h-6" /> : <Users className="w-6 h-6" />}
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-slate-400 block uppercase tracking-wider">
-                    {activeGame.players[0]?.name}
-                  </span>
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-2xl font-black font-mono leading-none">{activeGame.players[0]?.score || 0}</span>
-                    <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tight">Points</span>
+              {/* Dynamic Interactive HUD */}
+              <div className="bg-slate-900 border border-slate-800 p-4 rounded-3xl shadow-lg flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4">
+                
+                {/* Player 1 Details */}
+                <div className="flex items-center gap-3 flex-1">
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-lg font-black transition-all ${
+                    activeGame.turnIndex === 0 
+                      ? 'bg-amber-500 text-slate-950 ring-4 ring-amber-400/40 scale-105' 
+                      : 'bg-slate-800 text-slate-400'
+                  }`}>
+                    {activeGame.players[0]?.uid === 'gemini' ? <Bot className="w-6 h-6" /> : <Users className="w-6 h-6" />}
                   </div>
-                </div>
-              </div>
-
-              {/* Dynamic Bag / Last Played Action Banner */}
-              <div className="bg-slate-950 border border-slate-850 px-4 py-2 rounded-2xl text-center flex flex-col justify-center items-center flex-1">
-                {activeGame.lastMove ? (
-                  <div className="text-[10px] text-slate-400 leading-tight">
-                    <span className="font-bold text-amber-400 block">Last Action:</span>
-                    <span>
-                      {activeGame.lastMove.playerName}{' '}
-                      {activeGame.lastMove.type === 'play' 
-                        ? `played "${activeGame.lastMove.word}" (+${activeGame.lastMove.score})` 
-                        : `skipped or swapped letters`
-                      }
+                  <div>
+                    <span className="text-xs font-bold text-slate-400 block uppercase tracking-wider">
+                      {activeGame.players[0]?.name}
                     </span>
-                  </div>
-                ) : (
-                  <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Board empty. Place letters first.</span>
-                )}
-                <div className="mt-1 flex items-center gap-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono">
-                  <Layers className="w-3 h-3 text-slate-500" /> Letter Bag remaining: {activeGame.bag.length}
-                </div>
-              </div>
-
-              {/* Player 2 Details */}
-              <div className="flex items-center justify-end gap-3 flex-1 text-right">
-                <div>
-                  <span className="text-xs font-bold text-slate-400 block uppercase tracking-wider">
-                    {activeGame.players[1]?.name || 'Waiting...'}
-                  </span>
-                  {activeGame.players[1] ? (
-                    <div className="flex items-baseline justify-end gap-1.5">
-                      <span className="text-2xl font-black font-mono leading-none">{activeGame.players[1]?.score || 0}</span>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-2xl font-black font-mono leading-none">{activeGame.players[0]?.score || 0}</span>
                       <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tight">Points</span>
                     </div>
+                  </div>
+                </div>
+
+                {/* Dynamic Bag / Last Played Action Banner */}
+                <div className="bg-slate-950 border border-slate-850 px-4 py-2 rounded-2xl text-center flex flex-col justify-center items-center flex-1">
+                  {activeGame.lastMove ? (
+                    <div className="text-[10px] text-slate-400 leading-tight">
+                      <span className="font-bold text-amber-400 block">Last Action:</span>
+                      <span>
+                        {activeGame.lastMove.playerName}{' '}
+                        {activeGame.lastMove.type === 'play' 
+                          ? `played "${activeGame.lastMove.word}" (+${activeGame.lastMove.score})` 
+                          : `skipped or swapped letters`
+                        }
+                      </span>
+                    </div>
                   ) : (
-                    <span className="text-xs text-amber-500 animate-pulse font-bold">Awaiting Opponent...</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Board empty. Place letters first.</span>
                   )}
+                  <div className="mt-1 flex items-center gap-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono">
+                    <Layers className="w-3 h-3 text-slate-500" /> Letter Bag remaining: {activeGame.bag.length}
+                  </div>
                 </div>
-                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-lg font-black transition-all ${
-                  activeGame.turnIndex === 1 
-                    ? 'bg-amber-500 text-slate-950 ring-4 ring-amber-400/40 scale-105' 
-                    : 'bg-slate-800 text-slate-400'
-                }`}>
-                  {activeGame.players[1]?.uid === 'gemini' ? <Bot className="w-6 h-6" /> : <Users className="w-6 h-6" />}
+
+                {/* Player 2 Details */}
+                <div className="flex items-center justify-end gap-3 flex-1 text-right">
+                  <div>
+                    <span className="text-xs font-bold text-slate-400 block uppercase tracking-wider">
+                      {activeGame.players[1]?.name || 'Waiting...'}
+                    </span>
+                    {activeGame.players[1] ? (
+                      <div className="flex items-baseline justify-end gap-1.5">
+                        <span className="text-2xl font-black font-mono leading-none">{activeGame.players[1]?.score || 0}</span>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold tracking-tight">Points</span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-amber-500 animate-pulse font-bold">Awaiting Opponent...</span>
+                    )}
+                  </div>
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center text-lg font-black transition-all ${
+                    activeGame.turnIndex === 1 
+                      ? 'bg-amber-500 text-slate-950 ring-4 ring-amber-400/40 scale-105' 
+                      : 'bg-slate-800 text-slate-400'
+                  }`}>
+                    {activeGame.players[1]?.uid === 'gemini' ? <Bot className="w-6 h-6" /> : <Users className="w-6 h-6" />}
+                  </div>
                 </div>
+
               </div>
+
+              {/* AI Turn Calculating Indicator */}
+              {solvingAI && (
+                <div className="bg-emerald-950/80 border border-emerald-500/30 rounded-2xl p-3 text-xs text-emerald-400 text-center animate-pulse flex items-center justify-center gap-2">
+                  <Bot className="w-5 h-5 animate-spin" />
+                  <span><strong>Scrabble AI Turn:</strong> Processing optimal plays. Scrabble solving model calculating...</span>
+                </div>
+              )}
+
+              {/* Standard 15x15 Play Grid */}
+              <GameBoard
+                board={activeGame.board}
+                tempPlacements={tempPlacements}
+                selectedTileId={selectedTileId}
+                onCellClick={handleCellClick}
+                onRecallTile={handleRecallTile}
+              />
+
+              {/* Core control interface */}
+              {activeGame.players[activeGame.turnIndex] && (
+                <ActiveGameControls
+                  rack={activeGame.players[activeGame.turnIndex].rack}
+                  tempPlacements={tempPlacements}
+                  allBoardCells={activeGame.board}
+                  selectedTileId={selectedTileId}
+                  isMyTurn={isPlayerMyTurn() && !solvingAI}
+                  rackExchangeSelection={rackExchangeSelection}
+                  onSelectTile={(id) => {
+                    setSelectedTileId(selectedTileId === id ? null : id);
+                  }}
+                  onToggleExchangeTile={handleToggleExchangeTile}
+                  onCommitMove={handleCommitMove}
+                  onRecallAll={handleRecallAll}
+                  onExchangeSelected={handleExchangeSelected}
+                  onPassTurn={handlePassTurn}
+                  onResign={handleResignGame}
+                />
+              )}
 
             </div>
 
-            {/* AI Turn Calculating Indicator */}
-            {solvingAI && (
-              <div className="bg-emerald-950/80 border border-emerald-500/30 rounded-2xl p-3 text-xs text-emerald-400 text-center animate-pulse flex items-center justify-center gap-2">
-                <Bot className="w-5 h-5 animate-spin" />
-                <span><strong>Scrabble AI Turn:</strong> Processing optimal plays. Scrabble solving model calculating...</span>
-              </div>
-            )}
-
-            {/* Standard 15x15 Play Grid */}
-            <GameBoard
-              board={activeGame.board}
-              tempPlacements={tempPlacements}
-              selectedTileId={selectedTileId}
-              onCellClick={handleCellClick}
-              onRecallTile={handleRecallTile}
-            />
-
-            {/* Core control interface */}
-            {activeGame.players[activeGame.turnIndex] && (
-              <ActiveGameControls
-                rack={activeGame.players[activeGame.turnIndex].rack}
+            {/* RIGHT COLUMN: Scrabble Validation System panel & recent logs activity tracker */}
+            <div className="lg:col-span-4 flex flex-col gap-4 w-full">
+              <MoveValidatorPanel
                 tempPlacements={tempPlacements}
                 allBoardCells={activeGame.board}
-                selectedTileId={selectedTileId}
                 isMyTurn={isPlayerMyTurn() && !solvingAI}
-                rackExchangeSelection={rackExchangeSelection}
-                onSelectTile={(id) => {
-                  setSelectedTileId(selectedTileId === id ? null : id);
-                }}
-                onToggleExchangeTile={handleToggleExchangeTile}
-                onCommitMove={handleCommitMove}
-                onRecallAll={handleRecallAll}
-                onExchangeSelected={handleExchangeSelected}
-                onPassTurn={handlePassTurn}
-                onResign={handleResignGame}
+                gameId={activeGame.id}
               />
-            )}
+
+              {/* Match Logs Feed */}
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-lg flex flex-col gap-3">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                    Match Activity History
+                  </span>
+                </div>
+                <div className="overflow-y-auto max-h-[220px] space-y-2 pr-1 text-[11px] scrollbar-thin scrollbar-thumb-slate-800">
+                  {chatMessages.length === 0 ? (
+                    <span className="text-slate-500 italic block py-4 text-center">No moves played or logs yet.</span>
+                  ) : (
+                    [...chatMessages].reverse().map((msg) => {
+                      const isSystem = msg.playerUid === 'system';
+                      const isGemini = msg.playerUid === 'gemini';
+                      return (
+                        <div key={msg.id} className="p-2.5 rounded-xl bg-slate-950/40 border border-slate-850 text-slate-300">
+                          <span className={`font-mono text-[9px] uppercase tracking-wider block mb-0.5 font-bold ${
+                            isSystem ? 'text-amber-500' : isGemini ? 'text-emerald-400' : 'text-slate-400'
+                          }`}>
+                            {isSystem ? '⚙️ System Log' : isGemini ? '🤖 Scrabble AI' : `👤 ${msg.playerName}`}
+                          </span>
+                          <span className="text-slate-300">{msg.text}</span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
 
           </div>
         )}
