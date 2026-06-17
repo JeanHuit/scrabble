@@ -72,10 +72,11 @@ ${boardDescription}
 
 STRICT GAME LAWS:
 1. Form a valid, standard English word using letters from your rack and matching/extending existing tiles on the board.
-2. If the board is completely empty, you MUST place one of your tiles on the center start tile at Row 7, Col 7.
-3. Newly placed tiles MUST be aligned in a single horizontal row or a single vertical column, and they must touch/connect to adjacent tiles on the board (gaps are allowed ONLY when bridged by previous fixed tiles).
-4. Do not reuse coordinates already filled.
-5. If you cannot find any valid word with the current rack, return an empty array of placements. This represents passing.
+2. Coordinates MUST be 0-indexed! The grid rows-columns are from 0 to 14. Center tile is at Row 7, Col 7. DO NOT use index 15 as it is out-of-bounds!
+3. If the board is completely empty, you MUST place one of your tiles on the center start tile at Row 7, Col 7.
+4. Newly placed tiles MUST be aligned in a single horizontal row or a single vertical column, and they must touch/connect to adjacent tiles on the board (gaps are allowed ONLY when bridged by previous fixed tiles).
+5. Do not reuse coordinates already filled.
+6. If you cannot find any valid word with the current rack, return an empty array of placements. This represents passing.
 
 Task: Propose your optimal word to play. Return the list of absolute row/col coordinates and uppercase letters.
 `;

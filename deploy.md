@@ -127,3 +127,52 @@ npm install
 ### Error: "TypeError [ERR_INVALID_URL_SCHEME]" in `tsx`
 A path parser conflict when relative alias wildcards are declared inside TS configs under node runtimes during dev mode:
 * **Fix implemented**: We have **fully purged** any unused aliases from both `/vite.config.ts` and `/tsconfig.json`. The application is fully optimized to run flawlessly out-of-the-box on your server!
+
+---
+
+## 6. Real-Time Supabase Database Setup
+
+To power the online PvP match lobbies and sync live tile placements with friends, connect your own free **Supabase** instance!
+
+### Step 1: Create the Database Table
+In your Supabase project dashboard, navigate to the **SQL Editor**, paste the following schema, and click **Run**:
+
+```sql
+-- Create the main games storage table
+create table games (
+  id text primary key,
+  state jsonb not null,
+  status text not null,
+  updated_at bigint not null
+);
+
+-- Enable Row Level Security (RLS) or add an bypass policy for rapid play
+alter table games enable row level security;
+
+create policy "Allow public anonymous access to games"
+on games for all
+using (true)
+with check (true);
+```
+
+### Step 2: Enable Postgres Changes Realtime
+By default, table-level replication is restricted in new Supabase schemas. You **MUST** enable Realtime for the `games` table:
+1. In your Supabase left-hand navigation sidebar, click on **Database** (the database icon).
+2. Click on **Replication**.
+3. Under the **`supabase_realtime`** publication row, click **Edit** (or search for the table list).
+4. Find the **`games`** table row, toggle the switch **ON** to enable Realtime replication, and click **Save**.
+
+*Alternative SQL Command (if you prefer running SQL to enable Database Realtime):*
+```sql
+alter publication supabase_realtime add table games;
+```
+
+### Step 3: Update Your Environment variables
+Finally, copy your credentials and place them in your `.env` or `.env.example` file:
+```env
+VITE_SUPABASE_URL="https://your-project-id.supabase.co"
+VITE_SUPABASE_ANON_KEY="your-anon-key-from-api-settings"
+```
+
+The game lobby will dynamically notice these variables, disable Firebase modes, and automatically unlock the **Supabase Online PvP Mode**!
+

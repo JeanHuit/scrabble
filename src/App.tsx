@@ -1,16 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db, auth, hasConfig, OperationType, handleFirestoreError } from './firebase';
-import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { 
-  doc, 
-  setDoc, 
-  getDoc, 
-  updateDoc, 
-  onSnapshot, 
-  collection, 
-  query, 
-  where 
-} from 'firebase/firestore';
+  hasSupabase, 
+  getOrCreateUserUid, 
+  createGameRoom, 
+  updateGameRoom, 
+  fetchGameRoom, 
+  subscribeToLobby, 
+  subscribeToGame 
+} from './supabase';
 
 import { Tile, BoardCell, GameState, Player, ChatMessage } from './types';
 import { GameBoard } from './components/GameBoard';
@@ -74,38 +71,18 @@ export default function App() {
     localStorage.setItem(LOCAL_NICKNAME_KEY, nickname);
   }, [nickname]);
 
-  // 2. Authenticate the user anonymously on load if Firebase is provisioned
+  // 2. Load persistent client player uuid on load
   useEffect(() => {
-    if (!hasConfig || !auth) return;
-
-    onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setUserUid(user.uid);
-      } else {
-        signInAnonymously(auth).catch((err) => {
-          console.error("Anonymous authentication error:", err);
-        });
-      }
-    });
+    const uid = getOrCreateUserUid();
+    setUserUid(uid);
   }, []);
 
-  // 3. Setup real-time listeners for waiting lobbies if Firestore is provisioned
+  // 3. Setup real-time listeners for waiting lobbies if Supabase is provisioned
   useEffect(() => {
-    if (!hasConfig || !db || !userUid) return;
+    if (!hasSupabase || !userUid) return;
 
-    const lobbyQuery = query(
-      collection(db, 'games'), 
-      where('status', '==', 'waiting')
-    );
-
-    const unsubscribe = onSnapshot(lobbyQuery, (snapshot) => {
-      const rooms: GameState[] = [];
-      snapshot.forEach(docSnap => {
-        rooms.push(docSnap.data() as GameState);
-      });
-      setWaitingGames(rooms);
-    }, (error) => {
-      console.warn("Lobby list fetch rejected (likely index or permission setup):", error);
+    const unsubscribe = subscribeToLobby((rooms) => {
+      setWaitingGames(rooms as GameState[]);
     });
 
     return () => unsubscribe();
@@ -113,25 +90,15 @@ export default function App() {
 
   // 4. Listen live to changes if we are currently connected inside an Online/PvP room
   useEffect(() => {
-    if (!hasConfig || !db || !activeGame || activeGame.gameType !== 'pvp') return;
+    if (!hasSupabase || !activeGame || activeGame.gameType !== 'pvp') return;
 
-    const gameRef = doc(db, 'games', activeGame.id);
-    const unsubscribe = onSnapshot(gameRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const gameData = docSnap.data() as GameState;
-        
-        // Grab current chat messages list
-        if (gameData.id === activeGame.id) {
-          // If the turn index changed and was not our turn previously, play alert sound or reset selection
-          setActiveGame(gameData);
-        }
+    const unsubscribe = subscribeToGame(activeGame.id, (gameData) => {
+      if (gameData) {
+        setActiveGame(gameData as GameState);
       } else {
-        // If the game room was deleted or closed, return back to Lobby
         alert("The online game room was closed or dismantled.");
         setActiveGame(null);
       }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `games/${activeGame.id}`);
     });
 
     return () => unsubscribe();
@@ -163,7 +130,7 @@ export default function App() {
     return { drawnTiles: tiles, revisedBag: bagCopy };
   };
 
-  // 5. SOLO PRACTICE MODE: Create offline game vs Gemini AI
+  // 5. SOLO PRACTICE MODE: Create offline game vs Scrabble AI
   const handleStartSoloAI = () => {
     const freshBag = generateSharedBag();
     
@@ -177,7 +144,7 @@ export default function App() {
       gameType: 'ai',
       players: [
         { uid: 'human', name: nickname, score: 0, rack: userDraw.drawnTiles, isConnected: true },
-        { uid: 'gemini', name: 'Gemini Scrabble AI', score: 0, rack: aiDraw.drawnTiles, isConnected: true }
+        { uid: 'gemini', name: 'Scrabble AI', score: 0, rack: aiDraw.drawnTiles, isConnected: true }
       ],
       board: [],
       bag: aiDraw.revisedBag,
@@ -195,7 +162,7 @@ export default function App() {
         id: 'welcome',
         playerUid: 'system',
         playerName: 'System',
-        text: `Welcome to solo practice mode! Challenge Gemini Scrabble AI. You go first, placement star at Center cells is ready.`,
+        text: `Welcome to solo practice mode! Challenge Scrabble AI. You go first, placement star at Center cells is ready.`,
         timestamp: Date.now()
       }
     ]);
@@ -247,9 +214,9 @@ export default function App() {
     setActiveGame(initialGame);
   };
 
-  // 7. ONLINE FIREBASE MODE: Create custom waiting room
+  // 7. ONLINE MODE: Create custom waiting room in Supabase
   const handleCreateOnlineGame = async () => {
-    if (!hasConfig || !db || !userUid) return;
+    if (!hasSupabase || !userUid) return;
 
     setLoadingLobby(true);
     const customRoomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -273,7 +240,7 @@ export default function App() {
     };
 
     try {
-      await setDoc(doc(db, 'games', customRoomCode), newGame);
+      await createGameRoom(newGame);
       setTempPlacements([]);
       setSelectedTileId(null);
       setChatMessages([
@@ -287,27 +254,27 @@ export default function App() {
       ]);
       setActiveGame(newGame);
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `games/${customRoomCode}`);
+      console.error('Failed to create online room:', err);
+      alert('Error creating game room. Please try again.');
     } finally {
       setLoadingLobby(false);
     }
   };
 
-  // 8. ONLINE FIREBASE MODE: Join waiting room
+  // 8. ONLINE MODE: Join waiting room in Supabase
   const handleJoinOnlineGame = async (gameId: string) => {
-    if (!hasConfig || !db || !userUid) return;
+    if (!hasSupabase || !userUid) return;
 
     setLoadingLobby(true);
-    const gameRef = doc(db, 'games', gameId.trim().toUpperCase());
+    const targetRoomId = gameId.trim().toUpperCase();
 
     try {
-      const snap = await getDoc(gameRef);
-      if (!snap.exists()) {
+      const roomData = await fetchGameRoom(targetRoomId);
+      if (!roomData) {
         alert("This room code does not exist. Check code and try again.");
         return;
       }
 
-      const roomData = snap.data() as GameState;
       if (roomData.status !== 'waiting') {
         alert("This lobby is already active, full, or closed.");
         return;
@@ -316,7 +283,7 @@ export default function App() {
       // Check if user is already player 1 (for reconnect scenarios)
       if (roomData.players[0].uid === userUid) {
         setTempPlacements([]);
-        setActiveGame(roomData);
+        setActiveGame(roomData as GameState);
         return;
       }
 
@@ -332,7 +299,8 @@ export default function App() {
       };
 
       const updatedPlayers = [roomData.players[0], opponentPlayer];
-      const updatedGame: Partial<GameState> = {
+      const updatedGame: GameState = {
+        ...roomData,
         players: updatedPlayers,
         status: 'active',
         bag: player2Draw.revisedBag,
@@ -340,7 +308,7 @@ export default function App() {
         updatedAt: Date.now()
       };
 
-      await updateDoc(gameRef, updatedGame);
+      await updateGameRoom(targetRoomId, updatedGame);
       
       setTempPlacements([]);
       setSelectedTileId(null);
@@ -355,10 +323,11 @@ export default function App() {
       ]);
       
       // Load active game context
-      setActiveGame({ ...roomData, ...updatedGame } as GameState);
+      setActiveGame(updatedGame);
 
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `games/${gameId}`);
+      console.error('Failed to join online room:', err);
+      alert('Error joining game room. Please try again.');
     } finally {
       setLoadingLobby(false);
     }
@@ -715,7 +684,7 @@ export default function App() {
       id: `ai-think-${Date.now()}`,
       playerUid: 'system',
       playerName: 'System',
-      text: `🧠 Gemini Scrabble AI is evaluating board configurations and rack tiles...`,
+      text: `🧠 ${aiPlayer.name} is evaluating board configurations and rack tiles...`,
       timestamp: Date.now()
     }]);
 
@@ -758,7 +727,7 @@ export default function App() {
             id: `ai-pass-${Date.now()}`,
             playerUid: 'system',
             playerName: 'System',
-            text: `⏭️ Gemini Scrabble AI passed their turn (no valid high-scoring words found). Your turn!`,
+            text: `⏭️ ${aiPlayer.name} passed their turn (no valid high-scoring words found). Your turn!`,
             timestamp: Date.now()
           }
         ]);
@@ -768,13 +737,39 @@ export default function App() {
         return;
       }
 
+      // Clean, validate, and normalize placements returned by AI
+      let parsedPlacements = (placements || []).map((p: any) => {
+        const r = Math.round(Number(p.row));
+        const c = Math.round(Number(p.col));
+        const letter = String(p.letter || '').toUpperCase().trim();
+        return { row: r, col: c, letter };
+      }).filter((p: any) => p.letter && !isNaN(p.row) && !isNaN(p.col));
+
+      // 1-indexing auto-detection: If board is empty and AI placed on (8, 8) instead of (7, 7)
+      // or if any coordinate is 15 (as standard coordinates are 0-14)
+      const isBoardEmpty = gameConfig.board.length === 0;
+      const hasFifteen = parsedPlacements.some((p: any) => p.row === 15 || p.col === 15);
+      const isOneIndexed = hasFifteen || (isBoardEmpty && parsedPlacements.some((p: any) => p.row === 8 && p.col === 8) && !parsedPlacements.some((p: any) => p.row === 7 && p.col === 7));
+
+      if (isOneIndexed) {
+        console.log("Auto-correcting AI placements from 1-indexed to 0-indexed coordinates...");
+        parsedPlacements = parsedPlacements.map((p: any) => ({
+          ...p,
+          row: p.row - 1,
+          col: p.col - 1
+        }));
+      }
+
+      // Safeguard bounds (coordinates must be within standard 0 to 14)
+      parsedPlacements = parsedPlacements.filter((p: any) => p.row >= 0 && p.row <= 14 && p.col >= 0 && p.col <= 14);
+
       // Build updated board placements matching AI's choices
       // Create objects fully marked with the AI Player identity
-      const proposedPlacements: BoardCell[] = placements.map((p: any) => ({
+      const proposedPlacements: BoardCell[] = parsedPlacements.map((p: any) => ({
         row: p.row,
         col: p.col,
-        letter: p.letter.toUpperCase(),
-        score: LETTER_VALUES[p.letter.toUpperCase()] ?? 0,
+        letter: p.letter,
+        score: LETTER_VALUES[p.letter] ?? 0,
         playerId: aiPlayer.uid,
         isFixed: true
       }));
@@ -782,6 +777,39 @@ export default function App() {
       // Calculate score securely using our exact engine calculations
       const candidateBoard = [...gameConfig.board, ...proposedPlacements];
       const scoring = validateAndScoreMove(candidateBoard, proposedPlacements);
+
+      if (!scoring.isValid) {
+        console.warn("AI generated move rejected by Scrabble rules:", scoring.errorMessage);
+        
+        // Output chat alert log
+        setChatMessages(prev => [
+          ...prev.filter(m => !m.text.includes('evaluating board')),
+          {
+            id: `ai-reject-${Date.now()}`,
+            playerUid: 'system',
+            playerName: 'System',
+            text: `⚠️ Play "${word}" by AI was rejected by Scrabble rules: ${scoring.errorMessage || 'Invalid layout'}. Turn passed!`,
+            timestamp: Date.now()
+          }
+        ]);
+
+        const nextState: GameState = {
+          ...gameConfig,
+          turnIndex: 0, // human turn
+          lastMove: {
+            playerUid: aiPlayer.uid,
+            playerName: aiPlayer.name,
+            type: 'pass',
+            score: 0,
+            timestamp: Date.now()
+          },
+          updatedAt: Date.now()
+        };
+
+        setActiveGame(nextState);
+        setSolvingAI(false);
+        return;
+      }
 
       // Distribute AI letters. Remove used letters from AI Rack, refill from bag!
       const usedLetters = proposedPlacements.map(p => p.letter);
@@ -799,11 +827,11 @@ export default function App() {
       const drawOutcome = drawLetters(gameConfig.bag, drawCount);
       const finalAiRack = [...revisedAiRack, ...drawOutcome.drawnTiles];
 
-      const finalizedAiScore = aiPlayer.score + (scoring.isValid ? scoring.score : 0);
+      const finalizedAiScore = aiPlayer.score + scoring.score;
 
       const nextState: GameState = {
         ...gameConfig,
-        board: scoring.isValid ? candidateBoard : gameConfig.board,
+        board: candidateBoard,
         bag: drawOutcome.revisedBag,
         players: [
           gameConfig.players[0], // Human index 0 stays same
@@ -829,8 +857,8 @@ export default function App() {
         ...prev.filter(m => !m.text.includes('evaluating board')),
         {
           id: `ai-move-${Date.now()}`,
-          playerUid: 'gemini',
-          playerName: 'Gemini',
+          playerUid: aiPlayer.uid,
+          playerName: aiPlayer.name,
           text: `🤖 Played "${scoring.isValid ? scoring.words.join(', ') : word}" for ${scoring.isValid ? scoring.score : 0} points! 📝 Explanation: ${explanation || 'Formed board connection.'}`,
           timestamp: Date.now()
         }
@@ -850,7 +878,7 @@ export default function App() {
         id: `ai-err-${Date.now()}`,
         playerUid: 'system',
         playerName: 'System',
-        text: `⚠️ Gemini solver ran into a glitch. Passing turn back to Player 1.`,
+        text: `⚠️ AI solver ran into a glitch. Passing turn back to Player 1.`,
         timestamp: Date.now()
       }]);
       setActiveGame(nextState);
@@ -859,17 +887,16 @@ export default function App() {
     }
   };
 
-  // Helper saving changes locally or executing Firestore write transactional mutations
+  // Helper saving changes locally or executing Supabase database updates
   const saveGameState = async (revisedGameConfig: GameState) => {
     if (revisedGameConfig.gameType === 'pvp') {
-      // Firestore synced room
-      if (!hasConfig || !db) return;
-      const gameRef = doc(db, 'games', revisedGameConfig.id);
+      // Supabase synced room
+      if (!hasSupabase) return;
       try {
-        await setDoc(gameRef, revisedGameConfig);
+        await updateGameRoom(revisedGameConfig.id, revisedGameConfig);
         setActiveGame(revisedGameConfig);
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `games/${revisedGameConfig.id}`);
+        console.error('Error saving game state:', err);
       }
     } else {
       // Offline Pass / AI solo game
@@ -969,8 +996,8 @@ export default function App() {
           </div>
         ) : (
           <div className="flex items-center gap-1 text-xs text-slate-500">
-            <Globe className={`w-3.5 h-3.5 ${hasConfig ? "text-emerald-500" : "text-rose-500"}`} />
-            <span>{hasConfig ? "Multiplayer Active" : "Local Mode Play"}</span>
+            <Globe className={`w-3.5 h-3.5 ${hasSupabase ? "text-emerald-500" : "text-rose-500"}`} />
+            <span>{hasSupabase ? "Multiplayer Active" : "Local Mode Play"}</span>
           </div>
         )}
       </header>
@@ -994,7 +1021,7 @@ export default function App() {
             {chatMessages.map((msg) => {
               const isSystem = msg.playerUid === 'system';
               const isGemini = msg.playerUid === 'gemini';
-              const isMe = msg.playerUid === 'human' || (hasConfig && msg.playerUid === userUid);
+              const isMe = msg.playerUid === 'human' || (hasSupabase && msg.playerUid === userUid);
 
               return (
                 <div
@@ -1055,7 +1082,7 @@ export default function App() {
                 nickname={nickname}
                 setNickname={setNickname}
                 waitingGames={waitingGames}
-                isFirebaseAvailable={hasConfig}
+                isCloudDbAvailable={hasSupabase}
                 onStartSoloAI={handleStartSoloAI}
                 onStartPassPlay={handleStartPassPlay}
                 onCreateOnlineGame={handleCreateOnlineGame}
@@ -1141,7 +1168,7 @@ export default function App() {
             {solvingAI && (
               <div className="bg-emerald-950/80 border border-emerald-500/30 rounded-2xl p-3 text-xs text-emerald-400 text-center animate-pulse flex items-center justify-center gap-2">
                 <Bot className="w-5 h-5 animate-spin" />
-                <span><strong>Gemini AI Turn:</strong> Processing optimal plays. Scrabble solving model calculating...</span>
+                <span><strong>Scrabble AI Turn:</strong> Processing optimal plays. Scrabble solving model calculating...</span>
               </div>
             )}
 

@@ -6,7 +6,7 @@ interface MatchLobbyProps {
   nickname: string;
   setNickname: (name: string) => void;
   waitingGames: GameState[];
-  isFirebaseAvailable: boolean;
+  isCloudDbAvailable: boolean;
   onStartSoloAI: () => void;
   onStartPassPlay: () => void;
   onCreateOnlineGame: () => void;
@@ -17,7 +17,7 @@ export const MatchLobby: React.FC<MatchLobbyProps> = ({
   nickname,
   setNickname,
   waitingGames,
-  isFirebaseAvailable,
+  isCloudDbAvailable,
   onStartSoloAI,
   onStartPassPlay,
   onCreateOnlineGame,
@@ -101,7 +101,7 @@ export const MatchLobby: React.FC<MatchLobbyProps> = ({
         >
           <Globe className="w-5 h-5" />
           <span>Multiplayer</span>
-          {!isFirebaseAvailable && (
+          {!isCloudDbAvailable && (
             <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-rose-500 rounded-full" />
           )}
         </button>
@@ -148,16 +148,16 @@ export const MatchLobby: React.FC<MatchLobbyProps> = ({
           </div>
         )}
 
-        {/* Firebase PvP Tab Panel */}
+        {/* Supabase PvP Tab Panel */}
         {activeTab === 'online' && (
           <div className="flex flex-col gap-4 animate-fade-in">
-            {!isFirebaseAvailable ? (
-              // When firebase is not connected on system
+            {!isCloudDbAvailable ? (
+              // When Supabase link is not active
               <div className="bg-slate-950/80 p-4 border border-rose-950 rounded-2xl text-center flex flex-col gap-3">
                 <HelpCircle className="w-8 h-8 text-rose-400 mx-auto" />
-                <h4 className="text-sm font-bold text-rose-300">Firebase Setup Required for PvP</h4>
+                <h4 className="text-sm font-bold text-rose-300">Supabase Setup Required for PvP</h4>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  Real-time multiplayer utilizes Firebase Firestore. It will activate once approved in the <strong>Settings Secrets panel</strong>.
+                  Real-time multiplayer utilizes Supabase database tables. To activate, set your variables inside the project <strong>VITE_SUPABASE_URL</strong> and <strong>VITE_SUPABASE_ANON_KEY</strong>.
                 </p>
                 <div className="flex gap-2">
                   <button
@@ -169,7 +169,7 @@ export const MatchLobby: React.FC<MatchLobbyProps> = ({
                 </div>
               </div>
             ) : (
-              // When firebase connection is active!
+              // When Supabase connection is active!
               <div className="flex flex-col gap-5">
                 <div className="grid grid-cols-2 gap-3">
                   <button

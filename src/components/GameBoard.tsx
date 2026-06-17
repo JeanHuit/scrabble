@@ -59,8 +59,8 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   };
 
   return (
-    <div id="scrabble-grid-container" className="w-full max-w-full aspect-square bg-[#0f342a] p-1.5 sm:p-3 rounded-2xl shadow-xl border border-[#0d2a21]">
-      <div className="grid grid-cols-15 grid-rows-15 gap-0.5 sm:gap-1 w-full h-full">
+    <div id="scrabble-grid-container" className="w-full max-w-[min(100vw-24px,100vh-320px)] aspect-square mx-auto bg-[#0f342a] p-1 sm:p-3 rounded-2xl shadow-xl border border-[#0d2a21]">
+      <div className="grid grid-cols-15 grid-rows-15 gap-[1px] sm:gap-[2px] md:gap-1 w-full h-full">
         {Array.from({ length: 15 }).map((_, row) => (
           Array.from({ length: 15 }).map((_, col) => {
             const { cell, isTemp } = grid[row][col];
@@ -95,21 +95,21 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 {hasTile ? (
                   // Elegant wooden tile visual representation
                   <div className="absolute inset-0.5 bg-[#f5dfb8] rounded border border-[#d6bc8a] shadow flex flex-col items-center justify-center text-slate-800 font-semibold select-none leading-none">
-                    <span className="text-[12px] sm:text-lg md:text-xl font-bold tracking-tight">
+                    <span className="text-[10px] xs:text-sm sm:text-lg md:text-xl font-bold tracking-tight leading-none">
                       {cell.letter === '_' ? ' ' : cell.letter}
                     </span>
-                    <span className="absolute bottom-0.5 right-0.5 text-[7px] sm:text-[9px] font-medium text-slate-500 leading-none">
+                    <span className="absolute bottom-0.5 right-0.5 text-[6px] xs:text-[7px] sm:text-[9px] font-medium text-slate-500 leading-none">
                       {LETTER_VALUES[cell.letter || ''] ?? 0}
                     </span>
                     {isTemp && (
-                      <span className="absolute top-0.5 left-0.5 text-[6px] text-amber-600 bg-amber-200/60 px-0.5 rounded uppercase leading-none font-bold">
+                      <span className="absolute top-[2px] left-[2px] text-[5px] text-amber-600 bg-amber-200/60 px-0.5 rounded uppercase leading-none font-bold">
                         Draft
                       </span>
                     )}
                   </div>
                 ) : (
                   // Multiplier or blank field labels
-                  <span className="text-[7px] sm:text-[10px] uppercase pointer-events-none select-none tracking-tighter">
+                  <span className="text-[5px] xs:text-[7px] sm:text-[10px] uppercase pointer-events-none select-none tracking-tighter">
                     {label}
                   </span>
                 )}

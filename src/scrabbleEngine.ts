@@ -123,7 +123,8 @@ export function validateAndScoreMove(
   }
 
   // Create lookup structures
-  const fixedCells = allBoardCells.filter(c => c.isFixed);
+  const newlyPlacedCoords = new Set(newlyPlacedCells.map(c => `${c.row},${c.col}`));
+  const fixedCells = allBoardCells.filter(c => c.isFixed && !newlyPlacedCoords.has(`${c.row},${c.col}`));
   const fixedGrid = getBoardGrid(fixedCells);
   const combinedGrid = getBoardGrid(allBoardCells);
 
