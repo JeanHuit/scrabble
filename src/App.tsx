@@ -13,6 +13,7 @@ import { Tile, BoardCell, GameState, Player, ChatMessage } from './types';
 import { GameBoard } from './components/GameBoard';
 import { ActiveGameControls } from './components/ActiveGameControls';
 import { MatchLobby } from './components/MatchLobby';
+import { DictionaryManager } from './components/DictionaryManager';
 import { 
   generateSharedBag, 
   LETTER_VALUES, 
@@ -62,6 +63,7 @@ export default function App() {
   // Loading indicator for online/AI solver operations
   const [solvingAI, setSolvingAI] = useState(false);
   const [loadingLobby, setLoadingLobby] = useState(false);
+  const [isInitialLoadDone, setIsInitialLoadDone] = useState(false);
 
   // Scroll target for chat box bottom
   const chatBottomRef = useRef<HTMLDivElement>(null);
@@ -88,9 +90,13 @@ export default function App() {
               localStorage.removeItem('scrabble_active_game_id');
               localStorage.removeItem('scrabble_active_game_type');
             }
+            setIsInitialLoadDone(true);
           }).catch((err) => {
             console.error("Error auto-restoring PvP game session:", err);
+            setIsInitialLoadDone(true);
           });
+        } else {
+          setIsInitialLoadDone(true);
         }
       } else {
         const localSaved = localStorage.getItem(`scrabble_saved_game_${savedGameId}`);
@@ -101,12 +107,17 @@ export default function App() {
             console.error('Failed to parse local saved game:', e);
           }
         }
+        setIsInitialLoadDone(true);
       }
+    } else {
+      setIsInitialLoadDone(true);
     }
   }, []);
 
   // Save or clear active game details to local storage
   useEffect(() => {
+    if (!isInitialLoadDone) return;
+
     if (activeGame) {
       localStorage.setItem('scrabble_active_game_id', activeGame.id);
       localStorage.setItem('scrabble_active_game_type', activeGame.gameType);
@@ -115,7 +126,7 @@ export default function App() {
       localStorage.removeItem('scrabble_active_game_id');
       localStorage.removeItem('scrabble_active_game_type');
     }
-  }, [activeGame]);
+  }, [activeGame, isInitialLoadDone]);
 
   // Sync chat messages from the live PvP game state
   useEffect(() => {
@@ -139,16 +150,57 @@ export default function App() {
   useEffect(() => {
     if (!hasSupabase || !activeGame || activeGame.gameType !== 'pvp') return;
 
+    // A. Realtime subscription (instant)
     const unsubscribe = subscribeToGame(activeGame.id, (gameData) => {
       if (gameData) {
-        setActiveGame(gameData as GameState);
+        setActiveGame(current => {
+          if (!current || !gameData) return gameData as GameState;
+          
+          const isPlayerCountDifferent = gameData.players?.length !== current.players?.length;
+          const isStatusDifferent = gameData.status !== current.status;
+          const isTurnDifferent = gameData.turnIndex !== current.turnIndex;
+          const isBoardDifferent = (gameData.board?.length || 0) !== (current.board?.length || 0);
+
+          if (gameData.updatedAt > current.updatedAt || isPlayerCountDifferent || isStatusDifferent || isTurnDifferent || isBoardDifferent) {
+            return gameData as GameState;
+          }
+          return current;
+        });
       } else {
         alert("The online game room was closed or dismantled.");
         setActiveGame(null);
       }
     });
 
-    return () => unsubscribe();
+    // B. Lightweight polling fallback (every 3 seconds) as an absolute guarantee
+    const pollInterval = setInterval(async () => {
+      try {
+        const gameData = await fetchGameRoom(activeGame.id);
+        if (gameData) {
+          setActiveGame(current => {
+            if (!current || !gameData) return gameData as GameState;
+            
+            const isPlayerCountDifferent = gameData.players?.length !== current.players?.length;
+            const isStatusDifferent = gameData.status !== current.status;
+            const isTurnDifferent = gameData.turnIndex !== current.turnIndex;
+            const isBoardDifferent = (gameData.board?.length || 0) !== (current.board?.length || 0);
+
+            if (gameData.updatedAt > current.updatedAt || isPlayerCountDifferent || isStatusDifferent || isTurnDifferent || isBoardDifferent) {
+              console.log("Polling updated state from DB (backup)...");
+              return gameData as GameState;
+            }
+            return current;
+          });
+        }
+      } catch (err) {
+        console.warn("Polling fallback error (silently ignored):", err);
+      }
+    }, 3000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(pollInterval);
+    };
   }, [activeGame?.id]);
 
   // Scroll to bottom of chat list on text expansions
@@ -664,6 +716,20 @@ export default function App() {
       return;
     }
 
+    // Validate each formed word against the Scrabble dictionary endpoint
+    for (const word of validation.words) {
+      try {
+        const checkRes = await fetch(`/api/validate-word?word=${encodeURIComponent(word)}`);
+        const result = await checkRes.json();
+        if (!result.isValid) {
+          alert(`🚫 The word "${word}" does not belong in the Scrabble dictionary! Please recall tiles and play a valid word.`);
+          return;
+        }
+      } catch (err) {
+        console.warn(`Could not verify word "${word}" with dictionary server:`, err);
+      }
+    }
+
     const activePlayer = activeGame.players[activeGame.turnIndex];
     if (!activePlayer) return;
 
@@ -1130,16 +1196,19 @@ export default function App() {
                 <span className="text-slate-400 text-sm font-semibold">Matchmaker synchronizing lobbies...</span>
               </div>
             ) : (
-              <MatchLobby
-                nickname={nickname}
-                setNickname={setNickname}
-                waitingGames={waitingGames}
-                isCloudDbAvailable={hasSupabase}
-                onStartSoloAI={handleStartSoloAI}
-                onStartPassPlay={handleStartPassPlay}
-                onCreateOnlineGame={handleCreateOnlineGame}
-                onJoinOnlineGame={handleJoinOnlineGame}
-              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start max-w-4xl mx-auto w-full">
+                <MatchLobby
+                  nickname={nickname}
+                  setNickname={setNickname}
+                  waitingGames={waitingGames}
+                  isCloudDbAvailable={hasSupabase}
+                  onStartSoloAI={handleStartSoloAI}
+                  onStartPassPlay={handleStartPassPlay}
+                  onCreateOnlineGame={handleCreateOnlineGame}
+                  onJoinOnlineGame={handleJoinOnlineGame}
+                />
+                <DictionaryManager />
+              </div>
             )}
           </div>
         ) : (
